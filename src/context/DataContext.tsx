@@ -542,7 +542,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
       // Load orders
       const { data: ordersData, error: ordersError } = await supabase!
-        .from('orders')
+        .from('customer_orders')
         .select('*')
         .order('created_at', { ascending: false });
 
@@ -1776,7 +1776,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
     try {
       const { data: orderData, error: orderError } = await supabase!
-        .from('orders')
+        .from('customer_orders')
         .insert([order])
         .select()
         .single();
@@ -1809,7 +1809,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
     try {
       const { error } = await supabase!
-        .from('orders')
+        .from('customer_orders')
         .update({ status, updated_at: new Date().toISOString() })
         .eq('id', orderId);
       if (error) throw error;
