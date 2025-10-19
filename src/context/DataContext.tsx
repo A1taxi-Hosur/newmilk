@@ -306,7 +306,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     id: supplier.id,
     name: supplier.name,
     email: supplier.email,
-    username: (supplier as any).username || supplier.email.split('@')[0],
+    username: (supplier as any).user_id || supplier.email.split('@')[0],
     password: (supplier as any).password || '',
     phone: supplier.phone,
     address: supplier.address,
@@ -753,26 +753,28 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
             .insert([{
               name: supplier.name,
               email: supplier.email,
-              username: supplier.username,
+              user_id: supplier.username,
               password: supplier.password,
               phone: supplier.phone,
               address: supplier.address,
               license_number: supplier.licenseNumber,
               total_capacity: supplier.totalCapacity,
               status: supplier.status
-            } as any])
+            }])
             .select()
             .single();
 
           if (error) {
-            console.warn('Database insert failed, using local storage:', error.message);
+            console.error('Database insert failed:', error);
+            throw error;
           } else {
             console.log('Successfully saved supplier to database:', data);
             // Update with database ID if successful
             newSupplier.id = data.id;
           }
         } catch (dbError) {
-          console.warn('Database operation failed, continuing with local storage:', dbError);
+          console.error('Database operation failed:', dbError);
+          throw dbError;
         }
       }
 
