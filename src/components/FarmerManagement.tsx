@@ -36,6 +36,15 @@ const FarmerManagement: React.FC<FarmerManagementProps> = ({ supplierId }) => {
     setIsSubmitting(true);
     setError('');
 
+    // Validate supplierId exists
+    if (!supplierId) {
+      setError('Supplier ID is missing. Please log out and log in again.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    console.log('Adding farmer with supplierId:', supplierId);
+
     try {
       await addFarmer({
         name: formData.name.trim(),
@@ -51,7 +60,12 @@ const FarmerManagement: React.FC<FarmerManagementProps> = ({ supplierId }) => {
       handleCloseModal();
     } catch (error: any) {
       console.error('Error adding farmer:', error);
-      setError(error.message || 'Failed to add farmer. Please try again.');
+      const errorMessage = error.message || 'Failed to add farmer. Please try again.';
+      if (errorMessage.includes('foreign key constraint')) {
+        setError('Invalid supplier ID. Please log out and log in again.');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsSubmitting(false);
     }

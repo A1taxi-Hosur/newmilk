@@ -1549,10 +1549,9 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       };
 
       if (isSupabaseAvailable()) {
-        const { error } = await supabase!
+        const { data, error } = await supabase!
           .from('farmers')
           .insert([{
-            id: farmerId,
             supplier_id: farmer.supplierId,
             name: farmer.name,
             email: farmer.email,
@@ -1561,10 +1560,17 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
             user_id: farmer.userId,
             password: farmer.password,
             status: farmer.status || 'active'
-          }]);
+          }])
+          .select()
+          .single();
 
         if (error) {
-          console.warn('Database insert failed, continuing with local storage:', error);
+          console.error('Database insert failed:', error);
+          throw error;
+        } else {
+          console.log('Successfully saved farmer to database:', data);
+          // Update with database ID if successful
+          newFarmer.id = data.id;
         }
       }
 
@@ -1577,7 +1583,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       return newFarmer;
     } catch (error: any) {
       console.error('Error adding farmer:', error);
-      return null;
+      throw error;
     }
   };
 
