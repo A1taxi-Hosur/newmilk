@@ -46,17 +46,21 @@ const FarmerManagement: React.FC<FarmerManagementProps> = ({ supplierId }) => {
     console.log('Adding farmer with supplierId:', supplierId);
 
     try {
+      // Generate userId from email (before @)
+      const userId = formData.email.trim().toLowerCase().split('@')[0];
+
       await addFarmer({
         name: formData.name.trim(),
         email: formData.email.trim().toLowerCase(),
         phone: formData.phone.trim(),
         address: formData.address.trim(),
         supplierId: supplierId,
+        userId: userId,
         password: formData.password,
         status: 'active'
       });
 
-      alert(`Farmer "${formData.name}" added successfully!\n\nLogin credentials:\nEmail: ${formData.email}\nPassword: ${formData.password}`);
+      alert(`Farmer "${formData.name}" added successfully!\n\nLogin credentials:\nUsername: ${userId}\nPassword: ${formData.password}\n\nThey can login at the Farmer login page.`);
       handleCloseModal();
     } catch (error: any) {
       console.error('Error adding farmer:', error);
