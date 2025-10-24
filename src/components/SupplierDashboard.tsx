@@ -32,7 +32,8 @@ const SupplierDashboard: React.FC<SupplierDashboardProps> = ({ user, onLogout })
   };
 
   const supplier = suppliers.find(s => s.id === user.id || s.email === user.email);
-  const supplierId = supplier?.id || user.supplierId || user.id;
+  // Always use the supplier's database ID, not the user ID
+  const supplierId = supplier?.id || user.supplierId;
   const myDeliveryPartners = deliveryPartners.filter(dp => dp.supplierId === supplierId);
   const myCustomers = customers.filter(c => c.supplierId === supplierId);
   const myDeliveries = deliveries.filter(d => d.supplierId === supplierId);

@@ -38,6 +38,15 @@ const AddDeliveryPartner: React.FC<AddDeliveryPartnerProps> = ({ supplierId }) =
     setIsSubmitting(true);
     setError('');
 
+    // Validate supplierId exists
+    if (!supplierId) {
+      setError('Supplier ID is missing. Please log out and log in again.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    console.log('Adding delivery partner with supplierId:', supplierId);
+
     try {
       await addDeliveryPartner({
         name: formData.name.trim(),
@@ -54,7 +63,12 @@ const AddDeliveryPartner: React.FC<AddDeliveryPartnerProps> = ({ supplierId }) =
       handleCloseModal();
     } catch (error: any) {
       console.error('Error adding delivery partner:', error);
-      setError(error.message || 'Failed to add delivery partner. Please try again.');
+      const errorMessage = error.message || 'Failed to add delivery partner. Please try again.';
+      if (errorMessage.includes('foreign key constraint')) {
+        setError('Invalid supplier ID. Please log out and log in again.');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsSubmitting(false);
     }
