@@ -797,7 +797,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const addDeliveryPartner = async (partner: Omit<DeliveryPartner, 'id' | 'assignedCustomers' | 'dailyAllocation' | 'remainingQuantity'>) => {
     try {
       const userId = `dp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       // Create local partner object first
       const newPartner: DeliveryPartner = {
         id: userId,
@@ -832,15 +832,19 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
             .single();
 
           if (error) {
-            console.warn('Database insert failed, using local storage:', error.message);
+            console.error('Database insert failed:', error);
+            throw error;
           } else {
-            console.log('Successfully saved to database:', data);
+            console.log('Successfully saved delivery partner to database:', data);
+            // Update with database ID if successful
+            newPartner.id = data.id;
           }
         } catch (dbError) {
-          console.warn('Database operation failed, continuing with local storage:', dbError);
+          console.error('Database operation failed:', dbError);
+          throw dbError;
         }
       }
-      
+
       // Always update local state and persist to localStorage
       setDeliveryPartners(prev => {
         const updated = [newPartner, ...prev];
@@ -852,8 +856,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
     } catch (error: any) {
       console.error('Error adding delivery partner:', error);
-      // Don't throw error, just log it for demo purposes
-      console.warn('Continuing with local storage due to error:', error.message);
+      throw error;
     }
   };
 
