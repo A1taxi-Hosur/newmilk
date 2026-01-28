@@ -7,7 +7,7 @@ interface MilkIntakeProps {
 }
 
 const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
-  const { farmers, pickupLogs, logPickup } = useData();
+  const { farmers, pickupLogs, logPickup, deliveryPartners } = useData();
   const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
@@ -24,11 +24,13 @@ const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
   const [error, setError] = useState('');
 
   const myFarmers = farmers.filter(f => f.supplierId === supplierId);
+  const myDeliveryPartners = deliveryPartners.filter(dp => dp.supplierId === supplierId);
   const myPickupLogs = pickupLogs.filter(log => log.supplierId === supplierId);
   const filteredLogs = myPickupLogs.filter(log =>
     log.date === filterDate &&
     (searchTerm === '' ||
-      myFarmers.find(f => f.id === log.farmerId)?.name.toLowerCase().includes(searchTerm.toLowerCase())
+      myFarmers.find(f => f.id === log.farmerId)?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      myDeliveryPartners.find(dp => dp.id === log.deliveryPartnerId)?.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
   );
 
@@ -92,10 +94,13 @@ const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
   };
 
   const downloadExcel = () => {
-    const headers = ['Date', 'Farmer Name', 'Quantity (L)', 'Quality Grade', 'Fat Content (%)', 'Price/Liter (₹)', 'Total Amount (₹)', 'Notes'];
+    const headers = ['Date', 'Farmer Name', 'Quantity (L)', 'Quality Grade', 'Fat Content (%)', 'Price/Liter (₹)', 'Total Amount (₹)', 'Intake By', 'Intake Time', 'Notes'];
 
     const csvData = filteredLogs.map(log => {
       const farmer = myFarmers.find(f => f.id === log.farmerId);
+      const deliveryPartner = log.deliveryPartnerId ? myDeliveryPartners.find(dp => dp.id === log.deliveryPartnerId) : null;
+      const intakeBy = deliveryPartner ? `${deliveryPartner.name} (Delivery Partner)` : 'Supplier';
+
       return [
         log.date,
         farmer?.name || 'Unknown',
@@ -104,6 +109,8 @@ const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
         log.fatContent,
         log.pricePerLiter,
         log.totalAmount,
+        intakeBy,
+        new Date(log.pickupTime).toLocaleTimeString(),
         log.notes || ''
       ];
     });
@@ -204,7 +211,7 @@ const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search farmer..."
+                placeholder="Search farmer or delivery partner..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
@@ -247,12 +254,18 @@ const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fat %</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price/L</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Intake By</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredLogs.map((log) => {
                   const farmer = myFarmers.find(f => f.id === log.farmerId);
+                  const deliveryPartner = log.deliveryPartnerId ? myDeliveryPartners.find(dp => dp.id === log.deliveryPartnerId) : null;
+                  const intakeBy = deliveryPartner ? deliveryPartner.name : 'Supplier';
+                  const intakeTime = new Date(log.pickupTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
                   return (
                     <tr key={log.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{log.date}</td>
@@ -270,6 +283,16 @@ const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{log.fatContent}%</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₹{log.pricePerLiter}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">₹{log.totalAmount.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {deliveryPartner ? (
+                          <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                            {intakeBy}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">{intakeBy}</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{intakeTime}</td>
                       <td className="px-6 py-4 text-sm text-gray-500">{log.notes || '-'}</td>
                     </tr>
                   );
@@ -285,7 +308,7 @@ const MilkIntake: React.FC<MilkIntakeProps> = ({ supplierId }) => {
                   <td className="px-6 py-4 text-sm font-semibold text-green-600">
                     ₹{filteredLogs.reduce((sum, log) => sum + log.totalAmount, 0).toFixed(2)}
                   </td>
-                  <td></td>
+                  <td colSpan={3}></td>
                 </tr>
               </tfoot>
             </table>

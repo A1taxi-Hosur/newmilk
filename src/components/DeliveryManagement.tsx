@@ -50,6 +50,9 @@ const DeliveryManagement: React.FC<DeliveryManagementProps> = ({ supplierId }) =
     const csvData = filteredDeliveries.map(delivery => {
       const customer = customers.find(c => c.id === delivery.customerId);
       const partner = deliveryPartners.find(dp => dp.id === delivery.deliveryPartnerId);
+      const completedTime = delivery.completedTime
+        ? new Date(delivery.completedTime).toLocaleString('en-US', { hour: '2-digit', minute: '2-digit' })
+        : '';
 
       return [
         delivery.date,
@@ -59,8 +62,8 @@ const DeliveryManagement: React.FC<DeliveryManagementProps> = ({ supplierId }) =
         partner?.vehicleNumber || '',
         delivery.quantity,
         delivery.status,
-        delivery.scheduledTime,
-        delivery.completedTime || '',
+        delivery.scheduledTime || '',
+        completedTime,
         delivery.notes || ''
       ];
     });
@@ -250,9 +253,11 @@ const DeliveryManagement: React.FC<DeliveryManagementProps> = ({ supplierId }) =
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{delivery.quantity}L</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {delivery.scheduledTime}
+                        <div className="text-gray-900">{delivery.scheduledTime || '-'}</div>
                         {delivery.completedTime && (
-                          <div className="text-xs text-green-600">Done: {delivery.completedTime}</div>
+                          <div className="text-xs text-green-600 font-medium mt-1">
+                            ✓ Delivered: {new Date(delivery.completedTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
