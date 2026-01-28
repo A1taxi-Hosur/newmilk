@@ -147,6 +147,8 @@ const DeliveryPartnerDashboard: React.FC<DeliveryPartnerDashboardProps> = ({ use
     setIsUpdating(customerId);
 
     try {
+      console.log(`🚚 Starting delivery completion for ${customerName}:`, { quantity, customerId, partnerId, today });
+
       // Find or create delivery record
       let delivery = deliveries.find(d =>
         d.customerId === customerId &&
@@ -155,6 +157,7 @@ const DeliveryPartnerDashboard: React.FC<DeliveryPartnerDashboardProps> = ({ use
       );
 
       const deliveryId = delivery?.id || `${customerId}_${partnerId}_${today}`;
+      console.log('📦 Delivery ID:', deliveryId);
 
       // Update delivery status with the edited quantity
       await updateDeliveryStatus(
@@ -163,22 +166,22 @@ const DeliveryPartnerDashboard: React.FC<DeliveryPartnerDashboardProps> = ({ use
         `✅ Delivered ${quantity}L to ${customerName} on ${today}`,
         quantity
       );
+      console.log('✅ Delivery status updated');
 
-      // Refresh data to get updated state
+      // Refresh data to get updated state from database
       await refreshData();
+      console.log('🔄 Data refreshed from database');
 
-      // Update local progress immediately for better UX
-      setTodayProgress(prev => ({
-        ...prev,
-        delivered: prev.delivered + quantity,
-        remaining: Math.max(0, prev.remaining - quantity),
-        completedDeliveries: prev.completedDeliveries + 1
-      }));
+      // Calculate new remaining quantity for the alert
+      const currentAllocation = dailyAllocations.find(a =>
+        a.deliveryPartnerId === partnerId && a.date === today
+      );
+      const newRemaining = currentAllocation?.remainingQuantity || 0;
 
-      alert(`✅ DELIVERY COMPLETED!\n\n👤 Customer: ${customerName}\n🥛 Delivered: ${quantity}L\n📊 Remaining: ${todayProgress.remaining - quantity}L`);
+      alert(`✅ DELIVERY COMPLETED!\n\n👤 Customer: ${customerName}\n🥛 Delivered: ${quantity}L\n📊 Remaining: ${newRemaining}L`);
 
     } catch (error) {
-      console.error('Error completing delivery:', error);
+      console.error('❌ Error completing delivery:', error);
       alert('❌ Failed to update delivery status. Please try again.');
     } finally {
       setIsUpdating(null);

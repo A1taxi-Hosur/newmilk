@@ -1255,7 +1255,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
   const updateDeliveryStatus = async (deliveryId: string, status: 'pending' | 'completed' | 'cancelled', notes?: string, quantity?: number) => {
     try {
-      console.log('Updating delivery status:', { deliveryId, status, notes, quantity });
+      console.log('📝 Updating delivery status:', { deliveryId, status, notes, quantity });
 
       // Check if delivery exists
       let existingDelivery = deliveries.find(d => d.id === deliveryId);
@@ -1272,6 +1272,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           const partner = deliveryPartners.find(p => p.id === partnerId);
 
           if (customer && partner) {
+            const deliveryTime = new Date().toISOString();
             const newDelivery: Delivery = {
               id: deliveryId,
               customerId: customerId,
@@ -1279,11 +1280,41 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
               deliveryPartnerId: partnerId,
               supplierId: partner.supplierId,
               quantity: quantity || customer.dailyQuantity,
+              suggestedQuantity: quantity || customer.dailyQuantity,
               date: date,
               status: status,
+              scheduledTime: '08:00 AM',
               notes: notes || '',
-              completedTime: status === 'completed' ? new Date().toISOString() : undefined
+              completedTime: status === 'completed' ? deliveryTime : undefined
             };
+
+            // Save to database if available
+            if (isSupabaseAvailable()) {
+              try {
+                const { error } = await supabase!
+                  .from('deliveries')
+                  .insert([{
+                    id: deliveryId,
+                    supplier_id: partner.supplierId,
+                    delivery_partner_id: partnerId,
+                    customer_id: customerId,
+                    quantity: newDelivery.quantity,
+                    delivery_date: date,
+                    scheduled_time: '08:00 AM',
+                    completed_time: newDelivery.completedTime,
+                    status: status,
+                    notes: notes || ''
+                  }]);
+
+                if (error) {
+                  console.warn('Failed to save new delivery to database:', error.message);
+                } else {
+                  console.log('✅ Successfully saved new delivery to database');
+                }
+              } catch (dbError) {
+                console.warn('Database operation failed:', dbError);
+              }
+            }
 
             setDeliveries(prev => [...prev, newDelivery]);
             const currentDeliveries = JSON.parse(localStorage.getItem('deliveries') || '[]');
@@ -1323,31 +1354,58 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         console.log('localStorage updated');
       }
 
-      // Save to new delivery_partner_customer_deliveries table if completed
-      if (status === 'completed' && existingDelivery && isSupabaseAvailable()) {
+      // Save to database if available
+      if (existingDelivery && isSupabaseAvailable()) {
         try {
           const finalQuantity = quantity !== undefined ? quantity : existingDelivery.quantity;
           const deliveryTime = new Date().toISOString();
 
-          const { error } = await supabase!
-            .from('delivery_partner_customer_deliveries')
-            .insert([{
+          // Update the deliveries table
+          const { error: deliveryError } = await supabase!
+            .from('deliveries')
+            .upsert([{
+              id: existingDelivery.id,
+              supplier_id: existingDelivery.supplierId,
               delivery_partner_id: existingDelivery.deliveryPartnerId,
               customer_id: existingDelivery.customerId,
-              supplier_id: existingDelivery.supplierId,
-              quantity_delivered: finalQuantity,
+              quantity: finalQuantity,
               delivery_date: existingDelivery.date,
-              delivery_time: deliveryTime,
-              status: 'completed',
-              payment_status: 'unpaid',
-              payment_amount: 0,
-              notes: notes || ''
-            }]);
+              scheduled_time: existingDelivery.scheduledTime || '08:00 AM',
+              completed_time: status === 'completed' ? deliveryTime : existingDelivery.completedTime,
+              status: status,
+              notes: notes || existingDelivery.notes
+            }], {
+              onConflict: 'id'
+            });
 
-          if (error) {
-            console.warn('Failed to save to delivery_partner_customer_deliveries:', error.message);
+          if (deliveryError) {
+            console.warn('Failed to update deliveries table:', deliveryError.message);
           } else {
-            console.log('✅ Successfully saved delivery to delivery_partner_customer_deliveries table');
+            console.log('✅ Successfully updated delivery in deliveries table');
+          }
+
+          // Also save to delivery_partner_customer_deliveries table if completed
+          if (status === 'completed') {
+            const { error: recordError } = await supabase!
+              .from('delivery_partner_customer_deliveries')
+              .insert([{
+                delivery_partner_id: existingDelivery.deliveryPartnerId,
+                customer_id: existingDelivery.customerId,
+                supplier_id: existingDelivery.supplierId,
+                quantity_delivered: finalQuantity,
+                delivery_date: existingDelivery.date,
+                delivery_time: deliveryTime,
+                status: 'completed',
+                payment_status: 'unpaid',
+                payment_amount: 0,
+                notes: notes || ''
+              }]);
+
+            if (recordError) {
+              console.warn('Failed to save to delivery_partner_customer_deliveries:', recordError.message);
+            } else {
+              console.log('✅ Successfully saved delivery to delivery_partner_customer_deliveries table');
+            }
           }
         } catch (dbError) {
           console.warn('Database operation failed:', dbError);
@@ -1400,31 +1458,37 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       }
 
       // Update local state
-      setDailyAllocations(prev => 
-        prev.map(alloc => 
-          alloc.id === allocation.id 
-            ? { 
-                ...alloc, 
+      setDailyAllocations(prev => {
+        const updated = prev.map(alloc =>
+          alloc.id === allocation.id
+            ? {
+                ...alloc,
                 remainingQuantity: newRemainingQuantity,
                 status: newStatus
-              } 
+              }
             : alloc
-        )
-      );
-      
+        );
+        // Update localStorage
+        localStorage.setItem('dailyAllocations', JSON.stringify(updated));
+        return updated;
+      });
+
       // Also update delivery partner's remaining quantity
-      setDeliveryPartners(prev => 
-        prev.map(partner => 
-          partner.id === partnerId 
-            ? { 
-                ...partner, 
-                remainingQuantity: newRemainingQuantity 
-              } 
+      setDeliveryPartners(prev => {
+        const updated = prev.map(partner =>
+          partner.id === partnerId
+            ? {
+                ...partner,
+                remainingQuantity: newRemainingQuantity
+              }
             : partner
-        )
-      );
-      
-      console.log(`Updated remaining quantity for partner ${partnerId}: ${newRemainingQuantity}L`);
+        );
+        // Update localStorage
+        localStorage.setItem('deliveryPartners', JSON.stringify(updated));
+        return updated;
+      });
+
+      console.log(`✅ Updated remaining quantity for partner ${partnerId}: ${newRemainingQuantity}L`);
     } catch (error: any) {
       console.error('Error updating remaining quantity:', error);
       // Don't throw error, just log it for demo purposes
