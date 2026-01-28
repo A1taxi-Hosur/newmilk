@@ -185,6 +185,7 @@ interface DataContextType {
   addPickupLog: (pickup: Omit<PickupLog, 'id'>) => Promise<void>;
   addDelivery: (delivery: Omit<Delivery, 'id'>) => Promise<void>;
   addDailyAllocation: (allocation: Omit<DailyAllocation, 'id'>) => Promise<void>;
+  updateDailyAllocation: (allocationId: string, updates: Partial<Omit<DailyAllocation, 'id' | 'createdAt'>>) => Promise<void>;
   assignCustomersToPartner: (partnerId: string, customerIds: string[]) => Promise<void>;
   assignRouteToPartner: (routeId: string, partnerId: string) => Promise<void>;
   updateDeliveryStatus: (deliveryId: string, status: 'pending' | 'completed' | 'cancelled', notes?: string, quantity?: number) => Promise<void>;
@@ -242,6 +243,7 @@ const DataContext = createContext<DataContextType>({
   addPickupLog: async () => {},
   addDelivery: async () => {},
   addDailyAllocation: async () => {},
+  updateDailyAllocation: async () => {},
   assignCustomersToPartner: async () => {},
   assignRouteToPartner: async () => {},
   updateDeliveryStatus: async () => {},
@@ -1036,7 +1038,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const addDailyAllocation = async (allocation: Omit<DailyAllocation, 'id'>) => {
     try {
       console.log('Adding daily allocation:', allocation);
-      
+
       // Create allocation object
       const newAllocation: DailyAllocation = {
         id: `allocation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1075,23 +1077,75 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           console.warn('Database operation failed, continuing with local storage:', dbError);
         }
       }
-      
+
       // Always update local state
       setDailyAllocations(prev => [newAllocation, ...prev]);
-      
+
       console.log('Added daily allocation and updated delivery partner:', newAllocation);
-      
+
       // Save to localStorage for cross-login sharing
       const existingAllocations = JSON.parse(localStorage.getItem('dailyAllocations') || '[]');
       const updatedAllocations = [newAllocation, ...existingAllocations];
       localStorage.setItem('dailyAllocations', JSON.stringify(updatedAllocations));
-      
+
       // Generate deliveries for assigned customers
       await generateDeliveriesFromAllocation(newAllocation);
-      
+
     } catch (error: any) {
       console.error('Error adding daily allocation:', error);
       // Don't throw error for demo purposes
+      console.warn('Continuing with local storage due to error:', error.message);
+    }
+  };
+
+  const updateDailyAllocation = async (allocationId: string, updates: Partial<Omit<DailyAllocation, 'id' | 'createdAt'>>) => {
+    try {
+      console.log('Updating daily allocation:', { allocationId, updates });
+
+      // Try to update database if available
+      if (isSupabaseAvailable()) {
+        try {
+          const dbUpdates: any = {};
+          if (updates.allocatedQuantity !== undefined) dbUpdates.allocated_quantity = updates.allocatedQuantity;
+          if (updates.remainingQuantity !== undefined) dbUpdates.remaining_quantity = updates.remainingQuantity;
+          if (updates.status !== undefined) dbUpdates.status = updates.status;
+
+          const { error } = await supabase!
+            .from('daily_allocations')
+            .update(dbUpdates)
+            .eq('id', allocationId);
+
+          if (error) {
+            console.warn('Database update failed, using local storage:', error.message);
+          } else {
+            console.log('✅ Successfully updated allocation in database');
+          }
+        } catch (dbError) {
+          console.warn('Database operation failed, continuing with local storage:', dbError);
+        }
+      }
+
+      // Update local state
+      setDailyAllocations(prev =>
+        prev.map(alloc =>
+          alloc.id === allocationId
+            ? { ...alloc, ...updates }
+            : alloc
+        )
+      );
+
+      // Update localStorage
+      const existingAllocations = JSON.parse(localStorage.getItem('dailyAllocations') || '[]');
+      const updatedAllocations = existingAllocations.map((alloc: DailyAllocation) =>
+        alloc.id === allocationId
+          ? { ...alloc, ...updates }
+          : alloc
+      );
+      localStorage.setItem('dailyAllocations', JSON.stringify(updatedAllocations));
+
+      console.log('✅ Daily allocation updated successfully');
+    } catch (error: any) {
+      console.error('Error updating daily allocation:', error);
       console.warn('Continuing with local storage due to error:', error.message);
     }
   };
@@ -1267,6 +1321,37 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         );
         localStorage.setItem('deliveries', JSON.stringify(updatedDeliveries));
         console.log('localStorage updated');
+      }
+
+      // Save to new delivery_partner_customer_deliveries table if completed
+      if (status === 'completed' && existingDelivery && isSupabaseAvailable()) {
+        try {
+          const finalQuantity = quantity !== undefined ? quantity : existingDelivery.quantity;
+          const deliveryTime = new Date().toISOString();
+
+          const { error } = await supabase!
+            .from('delivery_partner_customer_deliveries')
+            .insert([{
+              delivery_partner_id: existingDelivery.deliveryPartnerId,
+              customer_id: existingDelivery.customerId,
+              supplier_id: existingDelivery.supplierId,
+              quantity_delivered: finalQuantity,
+              delivery_date: existingDelivery.date,
+              delivery_time: deliveryTime,
+              status: 'completed',
+              payment_status: 'unpaid',
+              payment_amount: 0,
+              notes: notes || ''
+            }]);
+
+          if (error) {
+            console.warn('Failed to save to delivery_partner_customer_deliveries:', error.message);
+          } else {
+            console.log('✅ Successfully saved delivery to delivery_partner_customer_deliveries table');
+          }
+        } catch (dbError) {
+          console.warn('Database operation failed:', dbError);
+        }
       }
 
       // Update remaining quantity if completed
@@ -1632,6 +1717,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       };
 
       if (isSupabaseAvailable()) {
+        // Save to pickup_logs table
         const { error } = await supabase!
           .from('pickup_logs')
           .insert([{
@@ -1652,6 +1738,37 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
         if (error) {
           console.warn('Database insert failed, continuing with local storage:', error);
+        } else {
+          console.log('✅ Successfully saved to pickup_logs table');
+        }
+
+        // Also save to delivery_partner_milk_intake table
+        try {
+          const { error: intakeError } = await supabase!
+            .from('delivery_partner_milk_intake')
+            .insert([{
+              delivery_partner_id: pickup.deliveryPartnerId,
+              farmer_id: pickup.farmerId,
+              supplier_id: pickup.supplierId,
+              quantity_collected: pickup.quantity,
+              fat_content: pickup.fatContent || 0,
+              snf_content: 0,
+              quality_grade: pickup.qualityGrade || 'A',
+              price_per_liter: pickup.pricePerLiter,
+              total_amount: totalAmount,
+              collection_date: pickup.date,
+              collection_time: pickup.pickupTime || new Date().toISOString(),
+              status: 'collected',
+              notes: pickup.notes
+            }]);
+
+          if (intakeError) {
+            console.warn('Failed to save to delivery_partner_milk_intake:', intakeError.message);
+          } else {
+            console.log('✅ Successfully saved to delivery_partner_milk_intake table');
+          }
+        } catch (intakeDbError) {
+          console.warn('Database operation failed for milk intake:', intakeDbError);
         }
       }
 
@@ -1906,6 +2023,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       addPickupLog,
       addDelivery,
       addDailyAllocation,
+      updateDailyAllocation,
       assignCustomersToPartner,
       assignRouteToPartner,
       updateDeliveryStatus,

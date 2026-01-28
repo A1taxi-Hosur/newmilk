@@ -17,7 +17,7 @@ const DeliveryPartnerDashboard: React.FC<DeliveryPartnerDashboardProps> = ({ use
     navigate('/delivery/login');
   };
 
-  const { deliveries, customers, dailyAllocations, deliveryPartners, updateDeliveryStatus, refreshData, addCustomer, addPickupLog, addDelivery, addDailyAllocation, pickupLogs, farmers } = useData();
+  const { deliveries, customers, dailyAllocations, deliveryPartners, updateDeliveryStatus, refreshData, addCustomer, addPickupLog, addDelivery, addDailyAllocation, updateDailyAllocation, pickupLogs, farmers } = useData();
   const [activeTab, setActiveTab] = useState('overview');
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [editingQuantity, setEditingQuantity] = useState<{[customerId: string]: number}>({});
@@ -303,6 +303,7 @@ const DeliveryPartnerDashboard: React.FC<DeliveryPartnerDashboardProps> = ({ use
         createdAt: new Date().toISOString()
       });
 
+      // Find existing allocation for today
       const todayAllocations = dailyAllocations.filter(
         a => a.deliveryPartnerId === partnerId && a.date === today
       );
@@ -316,14 +317,23 @@ const DeliveryPartnerDashboard: React.FC<DeliveryPartnerDashboardProps> = ({ use
       const newAllocated = (existingAllocation?.allocatedQuantity || 0) + milkIntake.quantity;
       const newRemaining = (existingAllocation?.remainingQuantity || 0) + milkIntake.quantity;
 
-      await addDailyAllocation({
-        supplierId: currentPartner?.supplierId || '',
-        deliveryPartnerId: partnerId,
-        date: today,
-        allocatedQuantity: newAllocated,
-        remainingQuantity: newRemaining,
-        status: 'allocated'
-      });
+      // Update existing allocation or create new one
+      if (existingAllocation) {
+        await updateDailyAllocation(existingAllocation.id, {
+          allocatedQuantity: newAllocated,
+          remainingQuantity: newRemaining,
+          status: 'allocated'
+        });
+      } else {
+        await addDailyAllocation({
+          supplierId: currentPartner?.supplierId || '',
+          deliveryPartnerId: partnerId,
+          date: today,
+          allocatedQuantity: newAllocated,
+          remainingQuantity: newRemaining,
+          status: 'allocated'
+        });
+      }
 
       const farmer = farmers.find(f => f.id === milkIntake.farmerId);
       alert(`Milk intake recorded!\n\nFarmer: ${farmer?.name}\nQuantity: ${milkIntake.quantity}L\nQuality: ${milkIntake.qualityGrade}\nPrice: ₹${milkIntake.pricePerLiter}/L\nTotal: ₹${totalAmount.toFixed(2)}\n\nYour allocated milk has been increased by ${milkIntake.quantity}L`);
