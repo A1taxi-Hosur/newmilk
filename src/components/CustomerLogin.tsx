@@ -4,6 +4,7 @@ import { Milk, Eye, EyeOff, ShoppingCart } from 'lucide-react';
 import { User } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import CustomerSignup from './CustomerSignup';
+import { normalizePhone } from '../lib/auth';
 
 interface CustomerLoginProps {
   onLogin: (user: User) => void;
@@ -22,7 +23,7 @@ const CustomerLogin: React.FC<CustomerLoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setError('');
 
-    const normalizedPhone = phone.replace(/\s+/g, '');
+    const normalizedPhone = normalizePhone(phone);
 
     authenticateCustomer(normalizedPhone, password)
       .then(customerUser => {
