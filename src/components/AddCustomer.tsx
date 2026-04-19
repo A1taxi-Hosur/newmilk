@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, X, Trash2, Edit2, Users } from 'lucide-react';
+import { Plus, X, Trash2, Users } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { addCustomerUser } from '../lib/customerService';
+import { normalizePhone } from '../lib/auth';
 
 interface AddCustomerProps {
   supplierId: string;
@@ -14,7 +16,8 @@ const AddCustomer: React.FC<AddCustomerProps> = ({ supplierId }) => {
     email: '',
     phone: '',
     address: '',
-    dailyQuantity: ''
+    dailyQuantity: '',
+    password: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -27,20 +30,32 @@ const AddCustomer: React.FC<AddCustomerProps> = ({ supplierId }) => {
     setError('');
 
     try {
+      const normalizedPhone = normalizePhone(formData.phone);
+
+      await addCustomerUser({
+        name: formData.name,
+        phone: normalizedPhone,
+        password: formData.password
+      });
+
       await addCustomer({
-        ...formData,
+        name: formData.name,
+        email: formData.email,
+        phone: normalizedPhone,
+        address: formData.address,
         supplierId,
         dailyQuantity: parseInt(formData.dailyQuantity)
       });
 
-      alert('Customer added successfully!');
+      alert(`Customer added successfully!\n\nLogin credentials:\nPhone: ${normalizedPhone}\nPassword: ${formData.password}`);
       setShowModal(false);
       setFormData({
         name: '',
         email: '',
         phone: '',
         address: '',
-        dailyQuantity: ''
+        dailyQuantity: '',
+        password: ''
       });
     } catch (error) {
       console.error('Error adding customer:', error);
@@ -70,7 +85,8 @@ const AddCustomer: React.FC<AddCustomerProps> = ({ supplierId }) => {
       email: '',
       phone: '',
       address: '',
-      dailyQuantity: ''
+      dailyQuantity: '',
+      password: ''
     });
     setError('');
   };
@@ -235,6 +251,22 @@ const AddCustomer: React.FC<AddCustomerProps> = ({ supplierId }) => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter daily requirement in liters"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Login Password *
+                </label>
+                <input
+                  type="text"
+                  name="password"
+                  required
+                  value={formData.password}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Set a password for customer login"
+                />
+                <p className="mt-1 text-xs text-gray-500">Customer will use their phone number and this password to log in</p>
               </div>
 
               {error && (
