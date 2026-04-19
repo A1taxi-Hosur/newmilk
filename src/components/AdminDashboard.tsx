@@ -4,6 +4,7 @@ import { LogOut, Users, Building2, Truck, UserCheck, Package, Search, Ban, Trash
 import { User } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { supabase } from '../lib/supabase';
+import { hashPassword } from '../lib/auth';
 
 interface PendingRegistration {
   id: string;
@@ -139,6 +140,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
   const handleApproveRegistration = async (reg: PendingRegistration) => {
     try {
+      const hashedPassword = await hashPassword(reg.password);
+
+      const { data: existingUser } = await supabase
+        .from('customer_users')
+        .select('id')
+        .eq('phone', reg.phone)
+        .maybeSingle();
+
+      if (!existingUser) {
+        const { error: userError } = await supabase
+          .from('customer_users')
+          .insert({ name: reg.name, phone: reg.phone, password: hashedPassword });
+
+        if (userError) throw userError;
+      }
+
       await addCustomer({
         name: reg.name,
         phone: reg.phone,
@@ -155,6 +172,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         .eq('id', reg.id);
 
       await fetchPendingRegistrations();
+      alert(`Registration approved! ${reg.name} can now log in with their phone number and password.`);
     } catch (err: any) {
       alert('Failed to approve registration: ' + (err.message || 'Unknown error'));
     }
