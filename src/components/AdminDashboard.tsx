@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Users, Building2, Truck, UserCheck, Package, Search, Ban, Trash2, CheckCircle, XCircle, Eye, Menu, X as XIcon, Plus } from 'lucide-react';
+import { LogOut, Users, Building2, Truck, UserCheck, Package, Search, Ban, Trash2, CheckCircle, XCircle, Eye, Menu, X as XIcon, Plus, Clock, UserPlus } from 'lucide-react';
 import { User } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { supabase } from '../lib/supabase';
+
+interface PendingRegistration {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  address: string | null;
+  password: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason: string | null;
+  created_at: string;
+}
 
 interface AdminDashboardProps {
   user: User;
@@ -11,12 +24,17 @@ interface AdminDashboardProps {
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
   const navigate = useNavigate();
-  const { suppliers, deliveryPartners, customers, farmers, deliveries, updateSupplierStatus, deleteSupplier, addSupplier, deleteCustomer, deleteDeliveryPartner } = useData();
+  const { suppliers, deliveryPartners, customers, farmers, deliveries, updateSupplierStatus, deleteSupplier, addSupplier, deleteCustomer, deleteDeliveryPartner, addCustomer } = useData();
   const [activeTab, setActiveTab] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [newSupplierData, setNewSupplierData] = useState({
     name: '',
     email: '',
@@ -102,6 +120,74 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     }
   };
 
+  const fetchPendingRegistrations = useCallback(async () => {
+    setPendingLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('customer_registrations')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) setPendingRegistrations(data as PendingRegistration[]);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'registrations') fetchPendingRegistrations();
+  }, [activeTab, fetchPendingRegistrations]);
+
+  const handleApproveRegistration = async (reg: PendingRegistration) => {
+    try {
+      await addCustomer({
+        name: reg.name,
+        phone: reg.phone,
+        email: reg.email || '',
+        address: reg.address || '',
+        supplierId: '',
+        dailyQuantity: 1,
+        status: 'active'
+      });
+
+      await supabase
+        .from('customer_registrations')
+        .update({ status: 'approved', reviewed_by: user.name, reviewed_at: new Date().toISOString() })
+        .eq('id', reg.id);
+
+      await fetchPendingRegistrations();
+    } catch (err: any) {
+      alert('Failed to approve registration: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  const handleOpenReject = (id: string) => {
+    setRejectingId(id);
+    setRejectionReason('');
+    setShowRejectModal(true);
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingId) return;
+    try {
+      await supabase
+        .from('customer_registrations')
+        .update({
+          status: 'rejected',
+          rejection_reason: rejectionReason,
+          reviewed_by: user.name,
+          reviewed_at: new Date().toISOString()
+        })
+        .eq('id', rejectingId);
+
+      setShowRejectModal(false);
+      setRejectingId(null);
+      setRejectionReason('');
+      await fetchPendingRegistrations();
+    } catch (err: any) {
+      alert('Failed to reject registration: ' + (err.message || 'Unknown error'));
+    }
+  };
+
   const stats = {
     totalSuppliers: suppliers.length,
     activeSuppliers: suppliers.filter(s => s.status === 'approved').length,
@@ -114,12 +200,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     pendingDeliveries: deliveries.filter(d => d.status === 'pending').length
   };
 
+  const pendingCount = pendingRegistrations.filter(r => r.status === 'pending').length;
+
   const menuItems = [
     { id: 'overview', label: 'Overview', icon: Package },
     { id: 'suppliers', label: 'Suppliers', icon: Building2 },
     { id: 'delivery-partners', label: 'Delivery Partners', icon: Truck },
     { id: 'customers', label: 'Customers', icon: Users },
-    { id: 'farmers', label: 'Farmers', icon: UserCheck }
+    { id: 'farmers', label: 'Farmers', icon: UserCheck },
+    { id: 'registrations', label: 'New Registrations', icon: UserPlus, badge: pendingCount }
   ];
 
   const renderOverview = () => (
@@ -611,8 +700,155 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     );
   };
 
+  const renderRegistrations = () => {
+    const filtered = pendingRegistrations.filter(r =>
+      r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      r.phone.includes(searchTerm) ||
+      (r.email || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const statusColor = (status: string) => {
+      if (status === 'pending') return 'bg-yellow-100 text-yellow-800';
+      if (status === 'approved') return 'bg-green-100 text-green-800';
+      return 'bg-red-100 text-red-800';
+    };
+
+    return (
+      <div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Customer Registration Requests</h2>
+          <div className="flex gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-initial">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search registrations..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <button
+              onClick={fetchPendingRegistrations}
+              disabled={pendingLoading}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors text-sm whitespace-nowrap"
+            >
+              {pendingLoading ? 'Loading...' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+
+        {pendingLoading ? (
+          <div className="text-center py-12 text-gray-500">Loading registrations...</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {filtered.map(reg => (
+              <div key={reg.id} className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <h3 className="text-xl font-semibold text-gray-900">{reg.name}</h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor(reg.status)}`}>
+                        {reg.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-gray-500">Phone</p>
+                        <p className="font-medium text-gray-900">{reg.phone}</p>
+                      </div>
+                      {reg.email && (
+                        <div>
+                          <p className="text-gray-500">Email</p>
+                          <p className="font-medium text-gray-900">{reg.email}</p>
+                        </div>
+                      )}
+                      {reg.address && (
+                        <div>
+                          <p className="text-gray-500">Address</p>
+                          <p className="font-medium text-gray-900">{reg.address}</p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-gray-500">Submitted</p>
+                        <p className="font-medium text-gray-900">{new Date(reg.created_at).toLocaleDateString()} {new Date(reg.created_at).toLocaleTimeString()}</p>
+                      </div>
+                      {reg.rejection_reason && (
+                        <div className="md:col-span-2">
+                          <p className="text-gray-500">Rejection Reason</p>
+                          <p className="font-medium text-red-700">{reg.rejection_reason}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {reg.status === 'pending' && (
+                    <div className="flex flex-row sm:flex-col gap-2 sm:ml-4">
+                      <button
+                        onClick={() => handleApproveRegistration(reg)}
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Approve</span>
+                      </button>
+                      <button
+                        onClick={() => handleOpenReject(reg.id)}
+                        className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        <span>Reject</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {filtered.length === 0 && (
+              <div className="bg-white rounded-lg shadow-md p-12 text-center">
+                <Clock className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No registration requests</h3>
+                <p className="text-gray-500">New customer registrations will appear here for review</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Reject Registration</h3>
+            <p className="text-sm text-gray-600 mb-4">Provide a reason for rejection (optional):</p>
+            <textarea
+              rows={3}
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-red-500 focus:border-red-500 text-sm mb-4"
+              placeholder="e.g. Duplicate request, Invalid information..."
+            />
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => { setShowRejectModal(false); setRejectingId(null); }}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmReject}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+              >
+                Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddSupplierModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -792,6 +1028,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
           <nav className="p-4 space-y-1">
             {menuItems.map(item => {
               const Icon = item.icon;
+              const badge = (item as any).badge;
               return (
                 <button
                   key={item.id}
@@ -805,8 +1042,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                       : 'text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-sm">{item.label}</span>
+                  <Icon className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-sm flex-1 text-left">{item.label}</span>
+                  {badge > 0 && (
+                    <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0">
+                      {badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -828,6 +1070,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
           <nav className="p-4 space-y-1">
             {menuItems.map(item => {
               const Icon = item.icon;
+              const badge = (item as any).badge;
               return (
                 <button
                   key={item.id}
@@ -842,8 +1085,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                       : 'text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-sm">{item.label}</span>
+                  <Icon className="h-5 w-5 flex-shrink-0" />
+                  <span className="text-sm flex-1 text-left">{item.label}</span>
+                  {badge > 0 && (
+                    <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0">
+                      {badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -856,6 +1104,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
           {activeTab === 'delivery-partners' && renderDeliveryPartners()}
           {activeTab === 'customers' && renderCustomers()}
           {activeTab === 'farmers' && renderFarmers()}
+          {activeTab === 'registrations' && renderRegistrations()}
         </main>
       </div>
     </div>
