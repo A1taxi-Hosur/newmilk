@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Phone, Lock, User, Eye, EyeOff, ArrowLeft, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { hashPassword, normalizePhone } from '../lib/auth';
 
 interface CustomerSignupProps {
   onBack: () => void;
@@ -35,8 +36,6 @@ const CustomerSignup: React.FC<CustomerSignupProps> = ({ onBack, onSignupSuccess
     if (!/[0-9]/.test(password)) return 'Password must contain at least one number';
     return null;
   };
-
-  const normalizePhone = (phone: string): string => phone.replace(/\s+/g, '');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -76,40 +75,33 @@ const CustomerSignup: React.FC<CustomerSignupProps> = ({ onBack, onSignupSuccess
       }
 
       const { data: existing } = await supabase
-        .from('customer_registrations')
-        .select('id, status')
+        .from('customer_users')
+        .select('id')
         .eq('phone', normalizedPhone)
         .maybeSingle();
 
       if (existing) {
-        if (existing.status === 'pending') {
-          setError('A registration request with this phone number is already pending admin approval.');
-        } else if (existing.status === 'approved') {
-          setError('This phone number is already registered. Please log in.');
-        } else {
-          setError('Your previous registration was rejected. Please contact support.');
-        }
+        setError('This phone number is already registered. Please log in.');
         setIsSubmitting(false);
         return;
       }
 
+      const hashedPassword = await hashPassword(formData.password);
+
       const { error: insertError } = await supabase
-        .from('customer_registrations')
+        .from('customer_users')
         .insert({
           name: formData.name.trim(),
           phone: normalizedPhone,
-          email: formData.email.trim() || null,
-          address: formData.address.trim() || null,
-          password: formData.password,
-          status: 'pending'
+          password: hashedPassword
         });
 
       if (insertError) throw insertError;
 
       setSubmitted(true);
     } catch (err: any) {
-      console.error('Error submitting registration:', err);
-      setError(err.message || 'Failed to submit registration. Please try again.');
+      console.error('Error creating account:', err);
+      setError(err.message || 'Failed to create account. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -122,18 +114,15 @@ const CustomerSignup: React.FC<CustomerSignupProps> = ({ onBack, onSignupSuccess
           <div className="mx-auto h-16 w-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
             <CheckCircle className="h-10 w-10 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Submitted!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Account Created!</h2>
           <p className="text-gray-600 mb-6">
-            Your account request has been sent to the admin for review. You will be notified once your account is approved.
-          </p>
-          <p className="text-sm text-gray-500 mb-6">
-            This typically takes 1-2 business days. Once approved, you can log in using your phone number and password.
+            Your account has been created successfully. You can now log in with your phone number and password.
           </p>
           <button
             onClick={onBack}
             className="w-full py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors"
           >
-            Back to Login
+            Go to Login
           </button>
         </div>
       </div>
@@ -155,7 +144,7 @@ const CustomerSignup: React.FC<CustomerSignupProps> = ({ onBack, onSignupSuccess
             <User className="h-8 w-8 text-white" />
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Customer Sign Up</h2>
-          <p className="mt-2 text-sm text-gray-600">Submit your details to request an account</p>
+          <p className="mt-2 text-sm text-gray-600">Create your account to get started</p>
         </div>
 
         <form className="mt-8 space-y-6 bg-white p-8 rounded-lg shadow-lg" onSubmit={handleSubmit}>
@@ -309,17 +298,13 @@ const CustomerSignup: React.FC<CustomerSignupProps> = ({ onBack, onSignupSuccess
             </div>
           )}
 
-          <div className="bg-blue-50 border border-blue-200 rounded-md px-4 py-3 text-sm text-blue-700">
-            Your registration will be sent to the admin for review. Once approved, you can log in with your phone number and password.
-          </div>
-
           <div>
             <button
               type="submit"
               disabled={isSubmitting}
               className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isSubmitting ? 'Submitting...' : 'Submit Registration'}
+              {isSubmitting ? 'Creating Account...' : 'Create Account'}
             </button>
           </div>
 
